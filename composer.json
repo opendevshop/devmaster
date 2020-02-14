@@ -1,20 +1,4 @@
 {
-  "name": "devshop/devmaster",
-  "type": "drupal-profile",
-  "description": "The DevShop web interface.",
-  "license": "GPL-2.0-or-later",
-  "authors": [
-    {
-      "name": "Jon Pugh",
-      "role": "Author"
-    }
-  ],
-  "repositories": [
-    {
-      "type": "composer",
-      "url": "https://packages.drupal.org/7"
-    }
-  ],
   "require": {
     "cpliakas/git-wrapper": "~1.0",
     "knplabs/github-api": "^2.11",
@@ -23,15 +7,9 @@
     "php-http/guzzle6-adapter": "^1.1",
     "symfony/yaml": "^3.4"
   },
-  "minimum-stability": "dev",
-  "prefer-stable": true,
   "config": {
-    "sort-packages": true,
     "platform": {
       "php": "5.6.0"
     }
-  },
-  "conflict": {
-    "drupal/core": "8.*"
   }
 }
