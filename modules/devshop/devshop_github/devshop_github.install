@@ -64,6 +64,7 @@ function devshop_github_install() {
             '!link' => l(t('the settings page'), 'admin/devshop/github'),
         )));
 
+        module_load_include('devshop_github', 'includes/admin.inc')
         devshop_github_refresh_repositories();
       }
       else {
