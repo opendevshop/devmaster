@@ -166,7 +166,30 @@ function devshop_projects_preprocess_node(&$vars) {
         $vars['node']->task_status == HOSTING_TASK_WARNING ||
         $vars['node']->task_status == HOSTING_TASK_SUCCESS
       )) {
-      $vars['retry'] = drupal_get_form('hosting_task_retry_form', $vars['node']->nid);
+
+      // If "install" task, change name and add "force" task arg.
+      $form = drupal_get_form('hosting_task_retry_form', $vars['node']->nid);
+
+      if ($vars['node']->task_type == 'install' && !$vars['node']->environment->settings->locked) {
+        $vars['retry'] = $form;
+        $vars['retry']['retry']['#value'] = t('Reinstall');
+      }
+      elseif ($vars['node']->task_type == 'install' && $vars['node']->environment->settings->locked) {
+        $vars['retry'] = array(
+          '#children' => t('Site is protected.'),
+          '#type' => 'container',
+          '#attributes' => array(
+            'class' => array('well well-sm')
+          ),
+        );
+        $settings_link = "node/{$vars['node']->rid}/edit";
+        if (drupal_valid_path($settings_link)) {
+          $vars['retry']['#children'] .= ' ' . l(t('Environment Settings'), $settings_link);
+        }
+      }
+      elseif ($vars['node']->task_type != 'install' && $vars['node']->task_type != 'delete' || ($vars['node']->task_type != 'delete' && $vars['node']->task_status == HOSTING_TASK_ERROR)) {
+        $vars['retry'] = $form;
+      }
 
       // Change the name of the form button to "Run Again" if the task ended ok.
       if ($vars['node']->task_status == HOSTING_TASK_WARNING || $vars['node']->task_status == HOSTING_TASK_SUCCESS) {
@@ -197,7 +220,7 @@ function devshop_projects_preprocess_node(&$vars) {
     $messages = devshop_task_get_messages($vars['node']);
     $vars['messages'] = implode("\n", $messages);
     switch ($vars['task_type']) {
-      case 'devshop-deploy':
+      case 'deploy':
         $vars['type'] = 'Deploy';
         break;
       case 'verify':
@@ -213,7 +236,7 @@ function devshop_projects_preprocess_node(&$vars) {
     if ($vars['node']->task_status == HOSTING_TASK_PROCESSING || $vars['node']->task_status == HOSTING_TASK_QUEUED ) {
       $vars['follow_checkbox'] = array(
         '#type' => 'markup',
-        '#markup' => '<button class="follow-checkbox btn btn-default"><input type="checkbox" id="follow">' . t('Follow Logs') . '</button>',
+        '#markup' => '<label for="follow" type="button" class="follow-checkbox btn btn-link"><input type="checkbox" id="follow"> ' . t('Scroll Logs') . '</label>',
       );
 
       $vars['follow_checkbox'] = drupal_render($vars['follow_checkbox']);
@@ -315,11 +338,17 @@ function devshop_task_get_messages($task_node) {
       // devshop_check_errors($outputs[$command]['output']);
       $outputs[$command]['command'] = 'error';
     } elseif ($record->type == 'p_log') {
-      $command = 'notice_' . count($outputs);
+      $command = 'log_' . count($outputs);
       $outputs[$command]['status'] = '';
       $outputs[$command]['icon'] = '';
       $outputs[$command]['command'] = $record->message;
       $outputs[$command]['output'] = '';
+    } elseif ($record->type == 'p_notice') {
+      $command = 'notice_' . count($outputs);
+      $outputs[$command]['status'] = '';
+      $outputs[$command]['icon'] = '';
+      $outputs[$command]['command'] = '';
+      $outputs[$command]['output'] = $record->message;
     }
     // Let's show some success messages. There are way too many for verify and install tasks.
     elseif (($record->type == 'success' || $record->type == 'ok') && $task_node->task_type != 'verify' && $task_node->task_type != 'install') {
@@ -358,9 +387,21 @@ function devshop_task_get_messages($task_node) {
     else {
       $body = '';
     }
+
+    if (!empty($command)) {
+      $header = "<div class='panel-heading'><i class='fa fa-$icon pull-left'></i> $command</div>";
+    }
+    else {
+      $header = '';
+    }
+
+    if (empty($status)) {
+      $status = 'default';
+    }
+
     $messages[] = <<<HTML
 <div class="panel panel-$status devshop-command">
-  <div class="panel-heading"><i class="fa fa-$icon pull-left"></i> $command</div>
+  $header
   $body
 </div>
 HTML;

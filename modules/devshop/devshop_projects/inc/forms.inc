@@ -42,6 +42,10 @@ function devshop_projects_form_project_node_form_alter(&$form, &$form_state, $fo
     '#tree' => FALSE,
     '#weight' => -11,
   );
+
+  $form['project']['codebase']['status'] = $form['options']['status'];
+  unset($form['options']);
+
   $form['project']['codebase']['git_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Default Git Repository URL'),
@@ -399,7 +403,7 @@ function devshop_projects_form_project_node_form_alter(&$form, &$form_state, $fo
       '#default_value' => $project->settings->default_environment['solr_server'],
     );
   }
-  
+
   // Force the servers for this project's environments
   $form['project']['settings']['default_environment']['force_default_servers'] = array(
     '#title' => t('Force new environments to use these servers.'),
@@ -430,7 +434,7 @@ function devshop_projects_validate($node, &$form, &$form_state) {
       '%url' => $form_state['values']['project']['base_url'],
     )));
   }
-  
+
   // "Environment Domain Name Pattern" (Base URL)
   // Ensure @environment is included.
   if (strpos($form_state['values']['project']['base_url'], '@environment') === FALSE ) {
@@ -451,7 +455,17 @@ function devshop_projects_form_alter(&$form, &$form_state, $form_id) {
     unset($form['menu']);
     unset($form['revision_information']);
     unset($form['author']);
-    unset($form['options']);
+
+    // Move Published checkbox to General Settings group.
+    $form['options']['status']['#group'] = 'codebase';
+    $form['options']['status']['#title'] = t('Active');
+    $form['options']['status']['#description'] = t('Uncheck this box to hide the project from the main dashboard. Users who have permission to "view unpublished nodes" will still be able to view inactive projects.');
+
+    // On "project/add/settings" page, don't show the checkbox.
+    if (current_path() == 'projects/add/settings') {
+      $form['options']['status']['#access'] = 0;
+    }
+
     unset($form['actions']['delete']);
     unset($form['actions']['preview']);
     if (isset($form['retry']['#value'])) {
@@ -573,12 +587,12 @@ function devshop_projects_form_alter(&$form, &$form_state, $form_id) {
         break;
 
       // Deploy task form
-      case 'devshop-deploy':
+      case 'deploy':
 
         // Alter title of deploy task.
         $node = node_load($form['nid']['#value']);
-        drupal_set_title(t('Deploy code to Environment "@env"', array('@env' => $node->environment->name)), PASS_THROUGH);
-        $form['actions']['cancel']['#value'] = l(t('Cancel'), "node/{$node->project->nid}");
+//        drupal_set_title(t('Deploy code to Environment "@env"', array('@env' => $node->environment->name)), PASS_THROUGH);
+//        $form['actions']['cancel']['#value'] = l(t('Cancel'), "node/{$node->project->nid}");
         break;
 
       // Sync task form
@@ -789,7 +803,7 @@ HTML;
  * "Environment" Settings form.
  */
 function devshop_projects_form_site_node_form_alter(&$form, &$form_state, $form_id) {
-  
+
   $node = $form['#node'];
 
   $form['environment'] = array(
@@ -879,33 +893,14 @@ function devshop_projects_form_site_node_form_alter(&$form, &$form_state, $form_
   // Load deploy hooks form element.
   $form['environment']['settings']['deploy'] = devshop_environment_deploy_hooks_form($project, $environment);
 
-  // UX Improvements
-  // Project Settings Vertical Tabs
-  $form['environment_settings'] = array(
-    '#type' => 'vertical_tabs',
-    '#weight' => -11,
-  );
-
   $form['environment']['settings']['#title'] = t('General Settings');
-  $form['environment']['settings']['#group'] = 'environment_settings';
+  $form['environment']['settings']['#group'] = 'site_settings';
   $form['environment']['settings']['#weight'] = -100;
-  $form['environment']['settings']['deploy']['#group'] = 'environment_settings';
-  $form['hosting_backup_queue']['#group'] = 'environment_settings';
-  $form['http_basic_auth']['#group'] = 'environment_settings';
-  $form['http_basic_auth']['#title'] = t('Password Protection');
-  $form['hosting_logs']['#group'] = 'environment_settings';
-  
+
+   $form['environment']['settings']['deploy']['#group'] = 'site_settings';
+
   // Have to add new element for Domains because of the way drupal ajax callback works.
-  $form['domains'] = array(
-    '#title' => t('Domain Names'),
-    '#type' => 'fieldset',
-    '#group' => 'environment_settings',
-  );
-  $form['domains']['aliases_wrapper'] = $form['aliases_wrapper'];
-  $form['domains']['aliases_wrapper']['#type'] = 'container';
-  $form['domains']['aliases_wrapper']['add_alias']['#ajax']['callback'] = 'devshop_hosting_alias_add_alias_callback';
-  unset($form['aliases_wrapper']);
-  
+
   $form['environment']['settings']['client'] = $form['client'];
   $form['environment']['settings']['client']['#tree'] = FALSE;
   unset($form['client']);
@@ -913,19 +908,6 @@ function devshop_projects_form_site_node_form_alter(&$form, &$form_state, $form_
   $form['environment']['settings']['site_language'] = $form['site_language'];
   $form['environment']['settings']['site_language']['#tree'] = FALSE;
   unset($form['site_language']);
-  
-  if (isset($form['hosting_ssl_wrapper'])) {
-    $form['hosting_ssl_wrapper']['#group'] = 'environment_settings';
-    $form['hosting_ssl_wrapper']['#title'] = t('HTTPS');
-    $form['hosting_ssl_wrapper']['#prefix'] = '';
-    $form['hosting_ssl_wrapper']['#suffix'] = '';
-  }
-  if (isset($form['hosting_https_wrapper'])) {
-    $form['hosting_https_wrapper']['#group'] = 'environment_settings';
-    $form['hosting_https_wrapper']['#title'] = t('HTTPS');
-    $form['hosting_https_wrapper']['#prefix'] = '';
-    $form['hosting_https_wrapper']['#suffix'] = '';
-  }
 
   // Ensure values are saved.
   if (!isset($form['install_method'])) {
@@ -934,7 +916,7 @@ function devshop_projects_form_site_node_form_alter(&$form, &$form_state, $form_
       '#value' => $environment->settings->install_method,
     );
   }
-  
+
   // Add our own submit handler.
   $form['actions']['submit']['#submit'][] = 'devshop_projects_environment_settings_submit';
 
@@ -969,6 +951,11 @@ function devshop_projects_create_environment_form(&$form, &$form_state, $form_id
   }
   $project = $project_node->project;
 
+  if ($project_node->status != NODE_PUBLISHED) {
+    drupal_set_message(t('This project is not active. You may still create environments but non-admin users will not see the project or sites. Visit !settings to reactivate the project.', array(
+      '!settings' => l(t('Project Settings'), "node/{$project->nid}/edit"),
+    )), 'warning');
+  }
   // Wrap the form in a container so we can use grid
   $form['#prefix'] = '<div class="container add-environment-container">';
   $form['#suffix'] = '</div>';
@@ -991,7 +978,7 @@ function devshop_projects_create_environment_form(&$form, &$form_state, $form_id
   else {
     $pattern = variable_get('devshop_project_environment_url_pattern', '@project.@environment.@hostname');
   }
-  
+
   $labels = explode('@environment', strtr($pattern, array(
     '@project' => $project_node->title,
     '@hostname' => $_SERVER['SERVER_NAME'],
@@ -1004,7 +991,7 @@ function devshop_projects_create_environment_form(&$form, &$form_state, $form_id
   $form['environment_name'] = array(
     '#title' => t('Environment Name'),
     '#type' => 'textfield',
-    '#description' => t('Enter a system name for your environment.  For consistency, you might want to match the branch name.'),
+    '#description' => t('Enter a unique name for your environment. It will be used to generate a domain name. You can add additional domain names later.'),
     '#required' => TRUE,
     '#field_prefix' => '<div class="input-group"><div class="input-group-addon">http://' . $labels[0] . '</div>',
     '#field_suffix' => '<div class="input-group-addon input-group-addon-url">' . $labels[1] .'</div>
@@ -1014,6 +1001,7 @@ function devshop_projects_create_environment_form(&$form, &$form_state, $form_id
     '#weight' => -101,
     '#attributes' => array(
       'data-placement' => 'bottom',
+      'placeholder' => t('name'),
     ),
     '#element_validate' => array(
       'devshop_projects_create_environment_form_validate_name'
@@ -1224,6 +1212,20 @@ function devshop_projects_create_environment_form(&$form, &$form_state, $form_id
     ),
   );
 
+  $form['install_method']['import_files'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Path to Files Snapshot Directory'),
+    '#description' =>
+      t('Enter an absolute path to a files snapshot directory (such as /var/aegir/backups/files-snapshot/).') .
+      '<span class="text-danger">' . t('This string is stored in plain text. Use with caution.') . '</span>',
+    '#weight' => -98,
+    '#states' => array(
+      'visible' => array(
+        ':input[name="install_method[method]"]' => array('value' => 'import'),
+      ),
+    ),
+  );
+
   $form['server_stack'] = array(
     '#type' => 'fieldset',
     '#title' => t('Server Stack'),
@@ -1354,29 +1356,29 @@ function devshop_prepare_platform_node($project, $environment_name, $git_ref, $w
   $platform_node = new stdClass();
   $platform_node->type = 'platform';
   $platform_node->title = $project->name . '_' . $environment_name;
-  
-  // Specify GIT Url for hosting_git.module
+
+  // Specify GIT Url for hosting_platform.module
   if (empty($git_remote)) {
-    $platform_node->git['repo_url'] = $project->git_url;
+    $platform_node->git_remote = $project->git_url;
   }
   else {
-    $platform_node->git['repo_url'] = $git_remote;
+    $platform_node->git_remote = $git_remote;
   }
 
-  $platform_node->git['git_ref'] = $git_ref;
+  $platform_node->git_reference = $git_ref;
 
 
   // Enable git pull queue for this platform if chosen.
   if ($project->settings->deploy['method'] == 'queue') {
-    $platform_node->git['pull_method'] = HOSTING_GIT_PULL_QUEUE;
+    // @TODO: Using integers because hosting_git_pull module isn't enabled anymore.
+    $platform_node->git['pull_method'] = 1;
   }
   // For devshop "webhook" and "manual" methods, disable git pull for now.
-  // @TODO: Remove devshop "code deploy" task in exchange for hosting_git_pull module.
   else {
-    $platform_node->git['pull_method'] = HOSTING_GIT_PULL_DISABLED;
+    $platform_node->git['pull_method'] = 0;
   }
-  
-  
+
+
   // Determine which web server to use.
   // If no web server was set and project has a default, make sure we set it.
   if (empty($web_server) && !empty($project->settings->default_environment['web_server'])) {
@@ -1386,15 +1388,15 @@ function devshop_prepare_platform_node($project, $environment_name, $git_ref, $w
     $platform_node->web_server = $web_server;
   }
 
-  $platform_node->git['repo_path'] = $project->code_path . '/' . $environment_name;
+  $platform_node->git_root = $project->code_path . '/' . $environment_name;
 
   // Append drupal_path to repo_path if there is one. If not, repo_path is publish_path.
   if ($project->drupal_path) {
-    $platform_node->publish_path = $platform_node->git['repo_path'] . '/' . $project->drupal_path;
-    $platform_node->git['repo_docroot'] = $project->drupal_path;
+    $platform_node->publish_path = $platform_node->git_root . '/' . $project->drupal_path;
+    $platform_node->git_docroot = $project->drupal_path;
   }
   else {
-    $platform_node->publish_path = $platform_node->git['repo_path'];
+    $platform_node->publish_path = $platform_node->git_root;
   }
   return $platform_node;
 }
@@ -1624,7 +1626,7 @@ function devshop_environment_deploy_hooks_form($project, $environment = NULL, $t
   if (
     // Environment form
     ($is_environment_form && !$project->settings->deploy['allow_environment_deploy_config']) ||
-    ($task_type == 'devshop-deploy' && !$project->settings->deploy['allow_environment_deploy_hooks_override'])
+    ($task_type == 'deploy' && !$project->settings->deploy['allow_environment_deploy_hooks_override'])
   ) {
 
     foreach (element_children($return) as $i) {
@@ -1715,7 +1717,7 @@ function devshop_projects_environment_settings_submit($form, &$form_state) {
     watchdog('error', 'Environment record not saved: ' . print_r($environment, 1));
   }
 
-  $form_state['redirect'] = 'node/' . $environment->project_nid;
+  $form_state['redirect'] = 'node/' . $environment->site;
 }
 
 
@@ -1724,34 +1726,9 @@ function devshop_projects_environment_settings_submit($form, &$form_state) {
  */
 function devshop_projects_form_server_node_form_alter(&$form, &$form_state, $form_id) {
 
-  $items = array();
-  $items[] = t('To create a new server, you must first connect it to this one via SSH.');
-  $items[] = t("You must grant %aegir access to your new server by adding it's SSH Key (below) to <code>~/.ssh/authorized_keys</code>.", array(
-    '%aegir' => "aegir@" . $_SERVER['HTTP_HOST'],
-  ));
-  $items[] = t('If you wish to provision a new server, add the key to the
-<code>root</code> user, then run the <code>devshop remote:install</code> command.');
-  $items[] = t('If you have already provisioned the server, add the key to the <code>aegir</code> user.');
+  $form['title']['#description'] = t('The hostname of the server. Using a fully-qualified domain name for the server hostname is recommended.');
+  $form['title']['#attributes']['placeholder'] = 'cloud1.example.com';
 
-  $form['note'] = array(
-    '#markup' => theme('item_list', array('items' => $items)),
-    '#weight' => -100,
-    '#prefix' => '<div class="alert alert-info">',
-    '#suffix' => '</div>',
-  );
-
-  $form['key'] = array(
-    '#type' => 'item',
-    '#title' => t(' SSH Public Key for %aegir', array(
-      '%aegir' => "aegir@" . $_SERVER['HTTP_HOST'],
-    )),
-    '#markup' => '<pre>' . variable_get('devshop_public_key', '') . '</pre>',
-    '#weight' => -99,
-  );
-}
-
-function devshop_projects_form_hosting_task_update_status_form_alter(&$form, &$form_state, $form_id){
-  $form['update-status']['#value'] = t('Cancel');
 }
 
 /**

@@ -29,18 +29,15 @@ function devshop_projects_node_info() {
 function devshop_projects_node_load($nodes, $types) {
 
   // Only act on project and related nodes.
-  $types = array(
+  $allowed_types = array(
     'project',
     'site',
     'platform',
     'task',
   );
-  if (count(array_intersect($types, $types)) == 0) {
+  if (count(array_intersect($allowed_types, $types)) == 0) {
     return;
   }
-
-  global $user;
-  $project = new stdClass();
 
   $refs_types = db_select('node', 'n')
     ->fields('n', array('nid', 'type'))
@@ -73,7 +70,9 @@ function devshop_projects_node_load($nodes, $types) {
       // To test out constantly changing tasks, uncomment this line.
       //        $node->task_status = rand(-1, 3);
       $node->status_class = devshop_task_status_class($node->task_status);
+      $node->status_bootstrap_class = devshop_task_status_bootstrap_class($node->task_status);
       $node->status_name = _hosting_parse_error_code($node->task_status);
+      $node->status_slug = strtolower($node->status_name);
 
       // Override "ago" text.
       $node->ago = format_interval(time() - $node->executed,
@@ -137,6 +136,17 @@ function devshop_projects_node_load($nodes, $types) {
 }
 
 /**
+ * When install tasks are created, add "force-reinstall" task argument.
+ *
+ * @param $node
+ */
+function devshop_projects_node_presave($node) {
+  if ($node->type == 'task' && $node->task_type == 'install' && $node->is_new) {
+    $node->task_args['force-reinstall'] = 1;
+  }
+}
+
+/**
  * Implementation of hook_insert().
  *
  *   1. Saves data into our table.
@@ -151,12 +161,6 @@ function devshop_projects_node_insert($node) {
   if ($node->type == 'task') {
     $site = node_load($node->rid);
 
-    // @TODO: task_type should be task_status... but the system still works.  Was this never running? It's possible the other hooks that save last task info is all we need.
-    if (($site->type == 'site' || $site->type == 'platform') && isset($site->environment) && ($node->task_type == HOSTING_TASK_QUEUED || $node->task_type == HOSTING_TASK_PROCESSING)) {
-      $site->environment->last_task = $node->nid;
-      devshop_environment_save_last_task($site->environment);
-    }
-
     // When a task is created or updated that has a project, redirect to the project.
     if (isset($_GET['redirect']) && $_GET['redirect'] == 'task-page') {
       drupal_goto("node/{$node->nid}");
@@ -170,7 +174,7 @@ function devshop_projects_node_insert($node) {
     return;
   }
 
-  if (!isset($node->no_verify)) {
+  if (empty($node->no_verify)) {
     hosting_add_task($node->nid, 'verify');
   }
 
@@ -266,7 +270,7 @@ function devshop_projects_node_update($node) {
 
   // Write project record.
   drupal_write_record('hosting_devshop_project', $info, 'nid');
-  if (!isset($node->no_verify) || $node->no_verify == FALSE) {
+  if (empty($node->no_verify)) {
     hosting_add_task($node->nid, 'verify');
   }
 
